@@ -1,5 +1,8 @@
 
 
 #include "thingproperties.h"
+#include <SPI.h>
+#include <SD.h>
 
-void CloudConnect();
+void cloudConnect();
+void updateCloud(File dataFile, String name);

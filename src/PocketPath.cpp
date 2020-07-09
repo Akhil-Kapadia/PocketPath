@@ -17,6 +17,8 @@
 */
 
 #include "transmit.h"
+#include <SD.h>
+#include <SPI.h>
 
 void setup() {
   // Initialize serial and wait for port to open:
@@ -29,41 +31,34 @@ void setup() {
 }
 
 void loop() {
-  int State;
-  // Your code here 
-}
-
-void tracking() {
-
-}
-
-void sleeping() {
-
-}
-
-void transmit() {
-
-  // Connect to Arduino IoT Cloud
-  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
   /*
-     The following function allows you to obtain more information
-     related to the state of network and IoT Cloud connection and errors
-     the higher number the more granular information you’ll get.
-     The default is 0 (only errors).
-     Maximum is 4
- */
-  setDebugMessageLevel(2);
-  ArduinoCloud.printDebugInfo();
+    State 0: Sleeping
+    State 1: Tracking
+    State 3: Transmitting
+  */
+  int state;
+  File sensorData;
+  String fileName;
 
+  //Change states here according to buttons or whatever.
+
+  switch (state)
+  {
+  case 0: //Sleeping state. References Sleep.cpp
+    break;
+  case 1: //Tracking State. References Tracking.cpp
+
+    state = 0;  //Once done writing data to sd card, goto sleep.
+    break;
+  case 2: //Transmitting State. References Transmit.cpp
+    if(!ArduinoCloud.connected())
+      cloudConnect();
+    updateCloud(sensorData, fileName);
+    state = 0;
+    break;
+  default: 
+    state = 0; //All units on but not doing anything.
+    break;
+  }
 
 }
-
-
-void onDateChange() {
-  // Do something
-}
-
-
-
-
-
