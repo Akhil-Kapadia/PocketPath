@@ -71,8 +71,7 @@ void loop()
 
   switch (state)
   {
-  case SLEEPING:
-    Serial.println("In Sleep mode...");
+  case SLEEPING: Serial.println("In Sleep mode...");
     sleepRoutine();
     //Set LEDS.
     analogWrite(LED_SLEEPING, 128); //Use PWM to save current consumption.
@@ -80,18 +79,17 @@ void loop()
     digitalWrite(LED_TRANSMITTING, LOW);
     break;
 
-  case TRACKING: //Tracking state. References Tracking.cpp
+  case TRACKING:  Serial.println("In tracking state ...\n Attempting to retrieve GPS locational data...");
     //Attemps to retrieve location data. Timeout in 5 seconds.
     if (GPS.available())
     {
-      aquireGPSdata()
-          state = SLEEPING;
+      aquireGPSdata();
+      state = SLEEPING;
     }
 
     break;
 
-  case TRANSMITTING:
-    Serial.println("Begin Transmit state.");
+  case TRANSMITTING:  Serial.println("In transmit state.");
 
     lineCSV = +"x";
     ArduinoCloud.update();
@@ -145,6 +143,7 @@ void sleepRoutine()
 //As soon as the GPS is available returns a string of GPS location data.
 String aquireGPSdata()
 {
+
   // read GPS values
   float latitude = GPS.latitude();
   float longitude = GPS.longitude();
@@ -166,7 +165,4 @@ String aquireGPSdata()
   Serial.println(satellites);
 
   Serial.println();
-
-  
-  return "";
 }
