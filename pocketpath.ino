@@ -22,7 +22,7 @@ float latitude;
 float longitude;
 //Local variables
 int state;        //3 states, sleeping, tracking, transmitting.
-boolean SLEEPING; //If pause button was pressed.
+boolean paused; //If pause button was pressed.
 
 void setup()
 {
