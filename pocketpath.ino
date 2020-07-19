@@ -1,8 +1,12 @@
-
-#include "allincludes.h"
+#include <Arduino.h>
+#include <Wire.h>
+#include <SPI.h>
+#include <SD.h>
+#include <Arduino_MKRGPS.h>
+#include <ArduinoLowPower.h>
+#include <WiFiNINA.h>
 #include "thingproperties.h"
 
-//States
 #define SLEEPING 0
 #define TRACKING 1
 #define TRANSMITTING 2
@@ -21,9 +25,10 @@ String lineCSV = "testing : ";
 float latitude;
 float longitude;
 //Local variables
-int state;        //3 states, sleeping, tracking, transmitting.
-boolean paused; //If pause button was pressed.
-
+int state;                     //3 states, sleeping, tracking, transmitting.
+boolean paused;                //If pause button was pressed.
+unsigned long timer = 0;       //Will store the last loop time.
+const long intervalGPS = 5000; //Will timeout after 5 seconds
 void setup()
 {
   // Initialize serial and wait for port to open:
@@ -67,11 +72,13 @@ void loop()
 {
   File sensorData;
   String fileName;
+  unsigned long currentMillis;
   //Change states here according to buttons or whatever.
 
   switch (state)
   {
-  case SLEEPING: Serial.println("In Sleep mode...");
+  case SLEEPING:
+    Serial.println("In Sleep mode...");
     sleepRoutine();
     //Set LEDS.
     analogWrite(LED_SLEEPING, 128); //Use PWM to save current consumption.
@@ -79,17 +86,25 @@ void loop()
     digitalWrite(LED_TRANSMITTING, LOW);
     break;
 
-  case TRACKING:  Serial.println("In tracking state ...\n Attempting to retrieve GPS locational data...");
+  case TRACKING:
+    Serial.println("In tracking state ...\n Attempting to retrieve GPS locational data...");
     //Attemps to retrieve location data. Timeout in 5 seconds.
-    if (GPS.available())
+    currentMillis = millis();
+    if (currentMillis - timer >= intervalGPS) //5 sec timeout timer.
     {
-      aquireGPSdata();
-      state = SLEEPING;
+      timer = currentMillis;
+      //Try to get gps data.
+      if (GPS.available())
+      {
+        aquireGPSdata();
+        timer = 0;
+        state = SLEEPING;
+      }
     }
-
     break;
 
-  case TRANSMITTING:  Serial.println("In transmit state.");
+  case TRANSMITTING:
+    Serial.println("In transmit state.");
 
     lineCSV = +"x";
     ArduinoCloud.update();
@@ -116,7 +131,7 @@ void loop()
 //Interrupt service routine triggered every 30s. Changes the state.
 void GPSinterrupt()
 {
-  state = (SLEEPING) ? SLEEPING : TRACKING;
+  state = (paused) ? SLEEPING : TRACKING;
 }
 
 //Sleep routine puts all devices into a low power state.
@@ -165,4 +180,5 @@ String aquireGPSdata()
   Serial.println(satellites);
 
   Serial.println();
+  return "";
 }

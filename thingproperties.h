@@ -1,4 +1,6 @@
-#include "allincludes.h"
+#include <ArduinoIoTCloud.h>
+#include <Arduino_ConnectionHandler.h>
+#include "arduino_secrets.h"
 
 const char THING_ID[] = "757347ff-655e-4299-bc92-6f7c2ea1ccb7";
 
