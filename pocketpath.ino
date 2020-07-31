@@ -5,110 +5,118 @@
 #include <Arduino_MKRGPS.h>
 #include <ArduinoLowPower.h>
 #include <WiFiNINA.h>
-#include "thingproperties.h"
+#include "arduino_secrets.h"
 
 #define SLEEPING 0
 #define TRACKING 1
 #define TRANSMITTING 2
 //LEDs
-#define LED_TRACKING 3
-#define LED_SLEEPING 4
-#define LED_TRANSMITTING 5
+#define LED_TRACKING 2
+#define LED_SLEEPING 3
+#define LED_TRANSMITTING 4
 //State pins
 #define BMS_0 0
 #define BMS_1 1
 //Chip Select for SD card
 #define CS 7
 
-//Variables to be sent to cloud
-String lineCSV = "testing : ";
+//Max number of files in SD card
+const int LIMIT = 100;
+
+//GPS variables
 float latitude;
 float longitude;
 //Local variables
-int state;                     //3 states, sleeping, tracking, transmitting.
-boolean paused;                //If pause button was pressed.
-unsigned long timer = 0;       //Will store the last loop time.
-const long intervalGPS = 5000; //Will timeout after 5 seconds
+int state = 0;          //3 states, sleeping, tracking, transmitting.
+boolean paused = false; //If pause button was pressed.
+String name;
+
+//Objs
+File sensorData;
+WiFiClient wifi;
+
+//function declartions
+void interruptGPS();
+void interruptPAUSED();
+void interruptTRANSMIT();
+void sleepRoutine();
+String aquireGPSdata();
+void saveData(String data);
+
 void setup()
 {
+  char fileName[13];
+
   // Initialize serial and wait for port to open:
   Serial.begin(9600);
   // This delay gives the chance to wait for a Serial Monitor without blocking if none is found
-  while (!Serial)
-    ;
-
-  Serial.println("Begining Cloud Connection.");
-  // Connect to Arduino IoT Cloud
-  ArduinoCloud.begin(ArduinoIoTPreferredConnection);
-
-  Serial.println("Intializing cloud propeties.");
-  // Defined in thingProperties.h
-  initProperties();
-
-  // The following function allows you to obtain more information
-  // related to the state of network and IoT Cloud connection and errors
-  // the higher number the more granular information you’ll get.
-  // The default is 0 (only errors).
-  // Maximum is 4
-  Serial.println("Printing Cloud debug info:");
-  setDebugMessageLevel(2);
-  ArduinoCloud.printDebugInfo();
+  delay(1500);
 
   //Initalize GPS
   if (!GPS.begin(GPS_MODE_SHIELD))
     Serial.println("Failed to initialize GPS!");
 
-  //Interrupt subroutine for sleep/gps timer.
-  LowPower.attachInterruptWakeup(RTC_ALARM_WAKEUP, GPSinterrupt, CHANGE);
+  //initalize SD card
+  if (!SD.begin(CS))
+  {
+    pinMode(CS, OUTPUT);
+    Serial.println("initialization failed!");
+    return;
+  }
+
+  //create new CSV file numerical named per session.
+    //create new file
+  for (int n = 0; n < LIMIT; n++) {
+    sprintf(fileName, "DLOG%.3d.CSV", n);
+    if (SD.exists(fileName)) continue;
+    sensorData = SD.open(fileName, FILE_WRITE);
+    Serial.println("File: "+ String(fileName));
+    break;      
+  }
+   sensorData.close();
+
+  //Interrupt subroutines.
+  LowPower.attachInterruptWakeup(RTC_ALARM_WAKEUP, interruptGPS, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(BMS_0), interruptPAUSED, RISING);
+  attachInterrupt(digitalPinToInterrupt(BMS_1), interruptTRANSMIT, RISING);
 
   //Configure pins
-  pinMode(LED_BUILTIN, OUTPUT);
   pinMode(LED_TRACKING, OUTPUT);
   pinMode(LED_SLEEPING, OUTPUT);
   pinMode(LED_TRANSMITTING, OUTPUT);
+  
 }
 
 void loop()
 {
-  File sensorData;
-  String fileName;
-  unsigned long currentMillis;
   //Change states here according to buttons or whatever.
 
   switch (state)
   {
   case SLEEPING:
     Serial.println("In Sleep mode...");
-    sleepRoutine();
     //Set LEDS.
     analogWrite(LED_SLEEPING, 128); //Use PWM to save current consumption.
     digitalWrite(LED_TRACKING, LOW);
     digitalWrite(LED_TRANSMITTING, LOW);
+    //put things into low power and starts 30s sleep timer.
+    sleepRoutine();
     break;
 
   case TRACKING:
     Serial.println("In tracking state ...\n Attempting to retrieve GPS locational data...");
+    GPS.wakeup();
     //Attemps to retrieve location data. Timeout in 5 seconds.
-    currentMillis = millis();
-    if (currentMillis - timer >= intervalGPS) //5 sec timeout timer.
+    //Try to get gps data.
+    if (GPS.available())
     {
-      timer = currentMillis;
-      //Try to get gps data.
-      if (GPS.available())
-      {
-        aquireGPSdata();
-        timer = 0;
-        state = SLEEPING;
-      }
+      saveData(aquireGPSdata());
+      state = SLEEPING;
     }
     break;
 
   case TRANSMITTING:
     Serial.println("In transmit state.");
-
-    lineCSV = +"x";
-    ArduinoCloud.update();
-    delay(1000);
     state = SLEEPING;
     break;
 
@@ -129,19 +137,30 @@ void loop()
  */
 
 //Interrupt service routine triggered every 30s. Changes the state.
-void GPSinterrupt()
+void interruptGPS()
 {
   state = (paused) ? SLEEPING : TRACKING;
+}
+
+//Interrupt service routine if paused button is pressed.
+void interruptPAUSED() {
+  paused = true;
+}
+
+//Interrupts service routing is transmit button is pressed. Changes state.
+void interruptTRANSMIT() {
+  state = TRANSMITTING;
 }
 
 //Sleep routine puts all devices into a low power state.
 void sleepRoutine()
 {
   //put things into low power
-  LowPower.sleep(30000);
   GPS.standby();
-  ArduinoCloud.disconnect();
   WiFi.lowPowerMode();
+  WiFi.end();
+  Serial.println("Peripheals put to sleep");
+  LowPower.sleep(30000);
 }
 
 /** TRACKING STATE CODE SECTION
@@ -158,27 +177,42 @@ void sleepRoutine()
 //As soon as the GPS is available returns a string of GPS location data.
 String aquireGPSdata()
 {
-
   // read GPS values
   float latitude = GPS.latitude();
   float longitude = GPS.longitude();
-  float altitude = GPS.altitude();
-  int satellites = GPS.satellites();
 
   // print GPS values
-  Serial.println();
   Serial.print("Location: ");
   Serial.print(latitude, 7);
   Serial.print(", ");
   Serial.println(longitude, 7);
-
-  Serial.print("Altitude: ");
-  Serial.print(altitude);
-  Serial.println("m");
-
-  Serial.print("Number of satellites: ");
-  Serial.println(satellites);
-
   Serial.println();
-  return "";
+
+  return String(latitude, 6) + "," + String(longitude, 6); // convert to CSV
 }
+
+//Writes data to SD card
+void saveData(String data)
+{
+  sensorData = SD.open(name + ".csv", FILE_WRITE);
+  if (sensorData)
+  {
+    Serial.print("Writing data to sd card..");
+    sensorData.println(data);
+    sensorData.close(); // close the file
+    Serial.println("done.");
+  }
+  else
+  {
+    data = "";
+    Serial.println("Error writing to file !");
+  }
+}
+
+/**  TRANSMITTING STATE CODE SECTION
+ * 
+ * DEPENDENCIES : ArduionIoTCloud, SDFAT, SPI.
+ * 
+ * 
+ * 
+ */
